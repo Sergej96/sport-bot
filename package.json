@@ -1,0 +1,16 @@
+{
+  "name": "sport-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot that monitors a workout schedule API and notifies subscribers",
+  "type": "module",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node --watch bot.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "telegraf": "^4.16.3"
+  }
+}
