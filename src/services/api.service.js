@@ -28,7 +28,12 @@ apiClient.interceptors.response.use(
 
     error.normalized = {
       status: error.response?.status ?? null,
-      message: error.response?.data?.message ?? error.message,
+      // This API returns errors as { detail: "..." } (confirmed, e.g. 400
+      // "Нет доступных мест на мероприятии" for a full event), not
+      // { message: "..." } — check both so nothing falls back to axios's
+      // generic "Request failed with status code N" when a real reason
+      // was actually in the response body.
+      message: error.response?.data?.detail ?? error.response?.data?.message ?? error.message,
       isNetworkError,
       isTimeout,
     };
