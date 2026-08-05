@@ -6,6 +6,7 @@ import { registerAuthHandlers } from './handlers/auth.handler.js';
 import { registerSubscriptionHandlers } from './handlers/subscription.handler.js';
 import { registerScheduleHandlers } from './handlers/schedule.handler.js';
 import { registerBookingHandlers } from './handlers/booking.handler.js';
+import { registerMyBookingsHandlers } from './handlers/mybookings.handler.js';
 import * as logger from '../utils/logger.js';
 
 export function createBot() {
@@ -18,6 +19,7 @@ export function createBot() {
   registerSubscriptionHandlers(bot);
   registerScheduleHandlers(bot);
   registerBookingHandlers(bot);
+  registerMyBookingsHandlers(bot);
 
   // Backstop: catches anything a handler's own try/catch missed so one bad
   // update can't crash the whole bot process.

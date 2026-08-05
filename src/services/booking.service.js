@@ -23,23 +23,60 @@ async function postBooking(accessToken, eventId) {
   return response.data;
 }
 
+async function getBookings(accessToken) {
+  const response = await apiClient.get(BOOKINGS_API_URL, auth.withAuth(accessToken));
+  return response.data;
+}
+
+async function deleteBooking(accessToken, bookingId) {
+  const response = await apiClient.delete(`${BOOKINGS_API_URL}/${bookingId}`, auth.withAuth(accessToken));
+  return response.data;
+}
+
 /**
- * Books a single event for a Telegram user. Handles one transparent retry
- * if the first attempt 401s with an access token that looked valid but
- * wasn't (clock skew, revoked token, etc.).
+ * Runs `requestFn(accessToken)` with this user's current token, retrying
+ * once with a freshly renewed token if the first attempt 401s (access token
+ * looked valid but wasn't — clock skew, revoked token, etc.). Shared by
+ * every authenticated booking-API call so the retry logic lives in one place.
  */
-export async function bookEvent(telegramId, eventId) {
-  let accessToken = await auth.getValidAccessToken(telegramId);
+async function withAuthRetry(telegramId, requestFn) {
+  const accessToken = await auth.getValidAccessToken(telegramId);
 
   try {
-    return await postBooking(accessToken, eventId);
+    return await requestFn(accessToken);
   } catch (err) {
     if (err.normalized?.status === 401) {
-      accessToken = await auth.renewSession(telegramId);
-      return await postBooking(accessToken, eventId);
+      const freshToken = await auth.renewSession(telegramId);
+      return await requestFn(freshToken);
     }
     throw err;
   }
+}
+
+/** Books a single event for a Telegram user. */
+export async function bookEvent(telegramId, eventId) {
+  return withAuthRetry(telegramId, accessToken => postBooking(accessToken, eventId));
+}
+
+/**
+ * Fetches this user's active bookings from спортдлявсех.бел directly (not
+ * the local auto-booking queue — see storage.service.getQueue for that).
+ * Assumes GET on the same /bookings collection returns the caller's own
+ * bookings; adjust here if the real API exposes a different listing path.
+ */
+export async function getUserBookings(telegramId) {
+  const data = await withAuthRetry(telegramId, accessToken => getBookings(accessToken));
+  return Array.isArray(data) ? data : data?.bookings ?? [];
+}
+
+/**
+ * Cancels a confirmed booking via the API. Does NOT touch the local
+ * auto-booking queue — callers that also need to stop a related PENDING
+ * queue item should call storage.cancelQueueItem separately (see
+ * booking.handler.js, which does both for a queue-originated booking).
+ */
+export async function cancelBooking(telegramId, bookingId) {
+  return withAuthRetry(telegramId, accessToken => deleteBooking(accessToken, bookingId));
 }
 
 /** Adds an event to a user's auto-booking waitlist, unless already queued. */
@@ -58,14 +95,31 @@ export async function addToQueue(telegramId, eventId, meta = {}) {
   });
 }
 
+/**
+ * Normalizes one booking API object into the flat fields the bot displays.
+ * Shared by the auto-booking success message and the /my_bookings list so
+ * there's one place that knows the booking response shape.
+ */
+export function describeBooking(booking) {
+  const event = booking?.event ?? {};
+  return {
+    id: booking?.id ?? booking?.booking_id ?? null,
+    activityName: event.activity?.name ?? null,
+    venueName: event.venue_name ?? null,
+    dateStr: event.event_date ?? null,
+    startTime: event.start_time ?? null,
+    endTime: event.end_time ?? null,
+  };
+}
+
 /** Builds the 🎾 success notification, preferring live API fields with the cached queue-item as fallback. */
 function buildSuccessMessage(item, booking) {
-  const event = booking?.event ?? {};
-  const activityName = event.activity?.name ?? item.activityName ?? 'тренировка';
-  const venueName = event.venue_name ?? item.venueName ?? '—';
-  const dateStr = event.event_date ?? item.dateStr ?? '—';
-  const startTime = (event.start_time ?? item.startTime ?? '').slice(0, 5);
-  const endTime = (event.end_time ?? item.endTime ?? '').slice(0, 5);
+  const desc = describeBooking(booking);
+  const activityName = desc.activityName ?? item.activityName ?? 'тренировка';
+  const venueName = desc.venueName ?? item.venueName ?? '—';
+  const dateStr = desc.dateStr ?? item.dateStr ?? '—';
+  const startTime = (desc.startTime ?? item.startTime ?? '').slice(0, 5);
+  const endTime = (desc.endTime ?? item.endTime ?? '').slice(0, 5);
 
   return (
     `🎾 <b>Successful Auto-Booking!</b>\n` +
@@ -90,6 +144,7 @@ export async function processQueueItem(item, bot) {
       attempts: item.attempts + 1,
       lastAttemptAt: now,
       lastError: null,
+      bookingId: describeBooking(booking).id,
     });
 
     logger.info('watcher', 'Auto-booking succeeded', { userId: item.userId, eventId: item.eventId });

@@ -30,8 +30,9 @@
  *   booking_queue: Array<{
  *     id, userId, eventId,
  *     activityName, dateStr, startTime, endTime, venueName,  — cached for the success notification
- *     addedAt, status: 'PENDING'|'COMPLETED'|'FAILED',
+ *     addedAt, status: 'PENDING'|'COMPLETED'|'FAILED'|'CANCELLED',
  *     attempts, lastAttemptAt, lastError,
+ *     bookingId: string|null,  — the real API booking id, set once COMPLETED (see /my_bookings cancel flow)
  *   }>
  */
 
@@ -147,6 +148,12 @@ export async function getPendingQueueItems() {
   return db.booking_queue.filter(item => item.status === 'PENDING');
 }
 
+/** All PENDING waitlist entries belonging to one user — used to render /my_bookings. */
+export async function getPendingQueueItemsForUser(userId) {
+  const db = await readDb();
+  return db.booking_queue.filter(item => item.status === 'PENDING' && item.userId === String(userId));
+}
+
 export async function addQueueItem({ userId, eventId, activityName, dateStr, startTime, endTime, venueName }) {
   return updateDb(db => {
     const item = {
@@ -163,6 +170,7 @@ export async function addQueueItem({ userId, eventId, activityName, dateStr, sta
       attempts: 0,
       lastAttemptAt: null,
       lastError: null,
+      bookingId: null,
     };
     db.booking_queue.push(item);
     return item;
@@ -183,6 +191,23 @@ export async function updateQueueItem(id, fields) {
     const item = db.booking_queue.find(i => i.id === id);
     if (!item) return null;
     Object.assign(item, fields);
+    return item;
+  });
+}
+
+/**
+ * Cancels a user's own PENDING queue item. Setting status away from
+ * 'PENDING' is what excludes it from getPendingQueueItems() — the watcher
+ * naturally stops considering it starting with its very next tick.
+ * Returns null if the item doesn't exist, isn't owned by this user, or is
+ * no longer PENDING (already completed/failed/cancelled).
+ */
+export async function cancelQueueItem(id, userId) {
+  return updateDb(db => {
+    const item = db.booking_queue.find(i => i.id === id && i.userId === String(userId));
+    if (!item || item.status !== 'PENDING') return null;
+    item.status = 'CANCELLED';
+    item.cancelledAt = new Date().toISOString();
     return item;
   });
 }
