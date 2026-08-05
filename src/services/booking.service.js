@@ -14,6 +14,11 @@ import * as logger from '../utils/logger.js';
 /** HTTP statuses that mean "this will never succeed, stop retrying". */
 const UNRECOVERABLE_STATUSES = new Set([404, 410]);
 
+// Confirmed: GET /api/v1/bookings?page_size=100 returns the caller's active
+// bookings. 100 comfortably covers one user's realistic booking count in a
+// single page — revisit if the API ever needs real pagination here.
+const BOOKINGS_PAGE_SIZE = 100;
+
 async function postBooking(accessToken, eventId) {
   const response = await apiClient.post(
     BOOKINGS_API_URL,
@@ -24,7 +29,10 @@ async function postBooking(accessToken, eventId) {
 }
 
 async function getBookings(accessToken) {
-  const response = await apiClient.get(BOOKINGS_API_URL, auth.withAuth(accessToken));
+  const response = await apiClient.get(
+    BOOKINGS_API_URL,
+    auth.withAuth(accessToken, { params: { page_size: BOOKINGS_PAGE_SIZE } })
+  );
   return response.data;
 }
 
@@ -61,12 +69,14 @@ export async function bookEvent(telegramId, eventId) {
 /**
  * Fetches this user's active bookings from спортдлявсех.бел directly (not
  * the local auto-booking queue — see storage.service.getQueue for that).
- * Assumes GET on the same /bookings collection returns the caller's own
- * bookings; adjust here if the real API exposes a different listing path.
+ * Confirmed: GET /bookings?page_size=100 returns the caller's own bookings.
+ * The exact envelope around the array isn't confirmed, so this accepts a
+ * bare array or any of the common paginated-list wrapper keys.
  */
 export async function getUserBookings(telegramId) {
   const data = await withAuthRetry(telegramId, accessToken => getBookings(accessToken));
-  return Array.isArray(data) ? data : data?.bookings ?? [];
+  if (Array.isArray(data)) return data;
+  return data?.bookings ?? data?.items ?? data?.data ?? data?.results ?? [];
 }
 
 /**
@@ -139,6 +149,7 @@ export async function processQueueItem(item, bot) {
 
   try {
     const booking = await bookEvent(item.userId, item.eventId);
+    console.log(booking)
     await storage.updateQueueItem(item.id, {
       status: 'COMPLETED',
       attempts: item.attempts + 1,
