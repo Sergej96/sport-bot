@@ -1,6 +1,6 @@
 # 🏃 Sport Bot
 
-A Telegram bot that monitors the free Saturday workout schedule at **Park 50th Anniversary of V. October** (Minsk) and notifies subscribers as soon as the schedule appears or is updated.
+A Telegram bot that monitors the free Saturday workout schedule at **Park 50th Anniversary of V. October** (Minsk), notifies subscribers as soon as the schedule appears or is updated, and — once you log in with your спортдлявсех.бел account — can book slots and auto-retry full ones for you.
 
 ---
 
@@ -12,6 +12,8 @@ A Telegram bot that monitors the free Saturday workout schedule at **Park 50th A
 - Max 2 notifications per date to prevent spam
 - Alerts the admin if the API fails 5 times in a row
 - Subscribe / unsubscribe via Telegram commands
+- Log in with your спортдлявсех.бел account to book directly from the chat
+- Full events can be added to an auto-booking waitlist — a background watcher retries every 60 seconds and notifies you the moment a slot is secured
 
 ---
 
@@ -42,10 +44,12 @@ Open `.env` and fill in the values:
 ```env
 BOT_TOKEN=your_telegram_bot_token_here
 ADMIN_CHAT_ID=your_telegram_chat_id_here
+ENCRYPTION_KEY=
 ```
 
 - **BOT_TOKEN** — create a bot and get the token from [@BotFather](https://t.me/BotFather)
 - **ADMIN_CHAT_ID** — your personal Telegram chat ID; find it via [@userinfobot](https://t.me/userinfobot)
+- **ENCRYPTION_KEY** — only needed once someone runs `/login`; generate one with `openssl rand -hex 32`
 
 ### 4. Start the bot
 
@@ -63,8 +67,11 @@ npm run dev
 
 | Command | Description |
 |---|---|
-| `/start` | Subscribe to notifications |
+| `/start` | Subscribe to schedule notifications |
 | `/stop` | Unsubscribe from notifications |
+| `/schedule` | Browse the schedule and book / waitlist events |
+| `/login` | Log in with your спортдлявсех.бел account (email + password, asked as chat messages) |
+| `/logout` | Forget your stored session |
 
 An **Unsubscribe** inline button is also shown in the welcome message.
 
@@ -93,11 +100,32 @@ Total events: 45
 
 ```
 sport-bot/
-├── bot.js          # All bot logic — polling, notifications, commands
-├── db.json         # Persistent store for subscribers and schedule state
+├── bot.js                          # Entrypoint — wiring, launch, shutdown
+├── src/
+│   ├── config.js                   # Env vars + constants
+│   ├── utils/
+│   │   ├── dates.js                 # Date/weekday helpers
+│   │   ├── crypto.js                # AES-256-GCM encrypt/decrypt for stored passwords
+│   │   └── logger.js                # Console wrapper that redacts secrets
+│   ├── services/
+│   │   ├── storage.service.js       # Atomic JSON read/write + accessors
+│   │   ├── api.service.js           # Axios instance + error normalization
+│   │   ├── auth.service.js          # Login, token refresh, re-login fallback
+│   │   ├── booking.service.js       # Book event / waitlist queue / queue processing
+│   │   ├── schedule.service.js      # Schedule fetch + message builders
+│   │   └── watcher.service.js       # 60s schedule poll + 60s auto-booking watcher
+│   └── bot/
+│       ├── index.js                 # Telegraf instance + handler wiring
+│       ├── session.js               # In-memory /login dialogue state
+│       └── handlers/
+│           ├── auth.handler.js
+│           ├── subscription.handler.js
+│           ├── schedule.handler.js
+│           └── booking.handler.js
+├── db.json                          # Persistent store (subscribers, schedule state, sessions, waitlist)
 ├── package.json
-├── .env            # Environment variables (do not commit!)
-└── .env.example    # Environment variables template
+├── .env                             # Environment variables (do not commit!)
+└── .env.example                     # Environment variables template
 ```
 
 ---
@@ -105,4 +133,4 @@ sport-bot/
 ## Requirements
 
 - Node.js **18** or higher
-- Internet access for Telegram API and the schedule API
+- Internet access for Telegram API and the schedule/booking API

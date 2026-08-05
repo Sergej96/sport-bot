@@ -1,5 +1,7 @@
 {
   "chat_ids": [],
   "schedule_state": {},
-  "notification_subscriptions": []
+  "notification_subscriptions": [],
+  "users": {},
+  "booking_queue": []
 }
