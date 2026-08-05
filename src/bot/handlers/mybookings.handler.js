@@ -14,6 +14,7 @@ import { Markup } from 'telegraf';
 import * as bookingService from '../../services/booking.service.js';
 import * as storage from '../../services/storage.service.js';
 import * as auth from '../../services/auth.service.js';
+import { formatDateEuro } from '../../utils/dates.js';
 import * as logger from '../../utils/logger.js';
 
 // Ephemeral cache so cancellation can confirm "✅ Запись на {activity_name}
@@ -34,7 +35,7 @@ function getCachedLabel(chatId, bookingId) {
 
 function formatWhen(dateStr, startTime, endTime) {
   const time = startTime && endTime ? `${startTime.slice(0, 5)}–${endTime.slice(0, 5)}` : '';
-  return [dateStr ?? '—', time].filter(Boolean).join(' · ');
+  return [formatDateEuro(dateStr) ?? '—', time].filter(Boolean).join(' · ');
 }
 
 /** Fetches + renders the combined list. Populates the label cache as a side effect. */

@@ -9,6 +9,7 @@ import { apiClient } from './api.service.js';
 import { BOOKINGS_API_URL } from '../config.js';
 import * as auth from './auth.service.js';
 import * as storage from './storage.service.js';
+import { formatDateEuro } from '../utils/dates.js';
 import * as logger from '../utils/logger.js';
 
 /** HTTP statuses that mean "this will never succeed, stop retrying". */
@@ -127,7 +128,7 @@ function buildSuccessMessage(item, booking) {
   const desc = describeBooking(booking);
   const activityName = desc.activityName ?? item.activityName ?? 'тренировка';
   const venueName = desc.venueName ?? item.venueName ?? '—';
-  const dateStr = desc.dateStr ?? item.dateStr ?? '—';
+  const dateStr = formatDateEuro(desc.dateStr ?? item.dateStr ?? '—');
   const startTime = (desc.startTime ?? item.startTime ?? '').slice(0, 5);
   const endTime = (desc.endTime ?? item.endTime ?? '').slice(0, 5);
 

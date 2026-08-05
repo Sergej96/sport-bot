@@ -48,6 +48,21 @@ export function formatDateRu(dateStr) {
   return `${d} ${MONTHS_RU[m - 1]} ${y}`;
 }
 
+/**
+ * Converts "2026-06-27" → "27.06.2026" (European numeric format), for the
+ * spots that currently show a raw API/ISO date with no formatting at all
+ * (auto-booking confirmations, /my_bookings). Falls back to the original
+ * string unchanged if it isn't a plain YYYY-MM-DD (e.g. already missing,
+ * or some other shape the API surprises us with) rather than showing
+ * "undefined.undefined.undefined" or throwing.
+ */
+export function formatDateEuro(dateStr) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr ?? '');
+  if (!match) return dateStr;
+  const [, y, m, d] = match;
+  return `${d}.${m}.${y}`;
+}
+
 /** Computes the English lowercase weekday name the API expects for a given YYYY-MM-DD. */
 export function dayOfWeekFor(dateStr) {
   const date = new Date(`${dateStr}T00:00:00`);
