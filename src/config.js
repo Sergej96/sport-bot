@@ -1,0 +1,47 @@
+/**
+ * Central config module — all environment variables and constants live
+ * here so nothing else in the codebase reads `process.env` directly.
+ */
+
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import 'dotenv/config';
+
+// This file lives at <project>/src/config.js, so the repo root is one level up.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT_DIR = join(__dirname, '..');
+
+export const BOT_TOKEN = process.env.BOT_TOKEN;
+export const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
+// Used to encrypt the fallback password stored for auto-relogin. Optional —
+// only required once a user actually runs /login. See utils/crypto.js.
+export const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+
+if (!BOT_TOKEN) throw new Error('BOT_TOKEN environment variable is required');
+if (!ADMIN_CHAT_ID) throw new Error('ADMIN_CHAT_ID environment variable is required');
+
+export const DB_PATH = join(ROOT_DIR, 'db.json');
+
+export const API_BASE_URL = 'https://xn--b1adewnfifgg2b6h.xn--90ais/api/v1';
+export const SCHEDULE_API_URL = `${API_BASE_URL}/schedule`;
+export const LOGIN_API_URL = `${API_BASE_URL}/auth/login`;
+export const REFRESH_API_URL = `${API_BASE_URL}/auth/refresh`;
+export const BOOKINGS_API_URL = `${API_BASE_URL}/bookings`;
+
+export const VENUE_ID = '55d51f65-d18c-4a49-bf3d-d5ed17b72c3a';
+
+// No general booking API existed when this bot was first built, so
+// "Book"/"Quick Book" buttons for logged-out users still just deep-link to
+// the venue's site (спортдлявсех.бел) instead of reserving a slot directly.
+export const BOOKING_URL = 'https://xn--b1adewnfifgg2b6h.xn--90ais';
+
+export const POLL_INTERVAL_MS = 60_000;       // 1 minute
+export const MAX_NOTIFICATIONS = 2;           // per Saturday date
+export const MAX_CONSECUTIVE_FAILURES = 5;
+export const API_TIMEOUT_MS = 10_000;
+
+export const MONTHS_RU = [
+  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+];
+export const WEEKDAYS_EN = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
