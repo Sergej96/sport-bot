@@ -3,5 +3,6 @@
   "schedule_state": {},
   "notification_subscriptions": [],
   "users": {},
-  "booking_queue": []
+  "booking_queue": [],
+  "auto_subscriptions": []
 }

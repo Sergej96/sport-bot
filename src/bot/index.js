@@ -7,6 +7,7 @@ import { registerSubscriptionHandlers } from './handlers/subscription.handler.js
 import { registerScheduleHandlers } from './handlers/schedule.handler.js';
 import { registerBookingHandlers } from './handlers/booking.handler.js';
 import { registerMyBookingsHandlers } from './handlers/mybookings.handler.js';
+import { registerSubscriptionPresetHandlers } from './handlers/subscription-preset.handler.js';
 import * as logger from '../utils/logger.js';
 
 export function createBot() {
@@ -20,6 +21,18 @@ export function createBot() {
   registerScheduleHandlers(bot);
   registerBookingHandlers(bot);
   registerMyBookingsHandlers(bot);
+  registerSubscriptionPresetHandlers(bot);
+
+  // Populates Telegram's "/" command menu button.
+  bot.telegram.setMyCommands([
+    { command: 'start', description: 'Подписаться на уведомления' },
+    { command: 'stop', description: 'Отписаться от уведомлений' },
+    { command: 'schedule', description: 'Расписание тренировок' },
+    { command: 'my_subscriptions', description: '⚙️ Мои подписки на авто-бронирование' },
+    { command: 'my_bookings', description: 'Мои записи' },
+    { command: 'login', description: 'Войти в спортдлявсех.бел' },
+    { command: 'logout', description: 'Выйти из аккаунта' },
+  ]).catch(err => logger.error('bot', 'Failed to set command menu', { error: err.message }));
 
   // Backstop: catches anything a handler's own try/catch missed so one bad
   // update can't crash the whole bot process.

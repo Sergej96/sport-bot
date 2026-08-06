@@ -45,3 +45,30 @@ export const MONTHS_RU = [
   'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
 ];
 export const WEEKDAYS_EN = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+// Weekend auto-subscription presets (see storage.service auto_subscriptions
+// + bot/handlers/subscription-preset.handler.js). Exact strings the API uses
+// for activity names — matching is a strict equality check, so this list
+// must stay in sync with what the schedule API actually returns.
+export const ACTIVITIES = [
+  'Dance mix',
+  'Power Body',
+  'ProJumping',
+  'Беговая тренировка',
+  'Волейбол',
+  'Воркаут',
+  'Здоровая спина',
+  'Зумба',
+  'Йога',
+  'Кроссфит',
+  'Пилатес',
+  'Сайклинг',
+  'Скандинавская ходьба',
+  'Соло-латина',
+  'Стретчинг',
+  'Стритбол',
+];
+
+export const TIME_SLOTS = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+
+export const WEEKEND_DAYS_RU = { Saturday: 'Суббота', Sunday: 'Воскресенье' };

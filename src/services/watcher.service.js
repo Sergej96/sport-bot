@@ -19,7 +19,7 @@ import {
   MAX_NOTIFICATIONS,
   MAX_CONSECUTIVE_FAILURES,
 } from '../config.js';
-import { getNextSaturday, dayOfWeekFor, hasEventStarted } from '../utils/dates.js';
+import { getNextSaturday, getNextWeekendDates, dayOfWeekFor, hasEventStarted } from '../utils/dates.js';
 import * as logger from '../utils/logger.js';
 
 let consecutiveFailures = 0;
@@ -191,13 +191,71 @@ async function pollSubscriptions(bot) {
   if (changed) await storage.writeDb(db);
 }
 
-/** Starts the Saturday-schedule + one-shot-notify polling loops. */
+// ─── Auto-subscription (weekend preset) poll tick ─────────────────────────
+
+/**
+ * For every active auto-subscription preset, checks whether the upcoming
+ * Saturday/Sunday schedule now has a matching event (same activity name,
+ * same start_time) and — if so — hands it to booking.service to book or
+ * waitlist. Matching is idempotent (see hasAnyQueueItemForEvent), so
+ * running this every tick is safe: an already-handled preset is a no-op.
+ */
+async function pollAutoSubscriptionPresets(bot) {
+  let presets;
+  try {
+    presets = await storage.getActiveAutoSubscriptions();
+  } catch (err) {
+    logger.error('watcher', 'Failed to read auto-subscription presets, skipping this tick', { error: err.message });
+    return;
+  }
+
+  if (presets.length === 0) return;
+
+  const { saturday, sunday } = getNextWeekendDates();
+  const targets = [
+    { dateStr: saturday.dateStr, dayName: 'Saturday' },
+    { dateStr: sunday.dateStr, dayName: 'Sunday' },
+  ];
+
+  for (const { dateStr, dayName } of targets) {
+    const dayPresets = presets.filter(p => p.dayOfWeek === dayName);
+    if (dayPresets.length === 0) continue;
+
+    let data;
+    try {
+      data = await scheduleService.fetchSchedule(dateStr, dayOfWeekFor(dateStr));
+    } catch (err) {
+      logger.error('watcher', 'Auto-subscription schedule fetch failed', { dateStr, error: err.message });
+      continue;
+    }
+
+    if (!data.total_events) continue; // Schedule not published yet for this date.
+
+    for (const preset of dayPresets) {
+      const activity = (data.activities ?? []).find(a => a.activity_name === preset.activityName);
+      const event = activity?.events?.find(e => e.start_time === preset.startTime);
+      if (!event) continue;
+
+      try {
+        await bookingService.processAutoSubscriptionMatch({ userId: preset.userId, event, activity, dateStr }, bot);
+      } catch (err) {
+        // processAutoSubscriptionMatch is designed to never throw, but guard
+        // anyway so one bad preset can't take down the rest of this tick.
+        logger.error('watcher', 'Unexpected error processing auto-subscription preset', { id: preset.id, error: err.message });
+      }
+    }
+  }
+}
+
+/** Starts the Saturday-schedule + one-shot-notify + auto-subscription polling loops. */
 export function startSchedulePolling(bot) {
   setTimeout(async () => {
     await pollSchedule(bot);
     await pollSubscriptions(bot);
+    await pollAutoSubscriptionPresets(bot);
     setInterval(() => pollSchedule(bot), POLL_INTERVAL_MS);
     setInterval(() => pollSubscriptions(bot), POLL_INTERVAL_MS);
+    setInterval(() => pollAutoSubscriptionPresets(bot), POLL_INTERVAL_MS);
   }, 3_000);
 }
 

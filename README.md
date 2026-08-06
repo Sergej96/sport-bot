@@ -14,6 +14,7 @@ A Telegram bot that monitors the free Saturday workout schedule at **Park 50th A
 - Subscribe / unsubscribe via Telegram commands
 - Log in with your спортдлявсех.бел account to book directly from the chat
 - Full events can be added to an auto-booking waitlist — a background watcher retries every 60 seconds and notifies you the moment a slot is secured
+- Pre-configure weekend auto-subscriptions (day + activity + time slot) via `/my_subscriptions` — the moment a matching event appears in a freshly-polled Saturday/Sunday schedule, the bot books it automatically, falling back to the waitlist queue if it's already full
 
 ---
 
@@ -72,6 +73,8 @@ npm run dev
 | `/schedule` | Browse the schedule and book / waitlist events |
 | `/login` | Log in with your спортдлявсех.бел account (email + password, asked as chat messages) |
 | `/logout` | Forget your stored session |
+| `/my_bookings` | View and cancel your active bookings / waitlist items |
+| `/my_subscriptions` | Manage weekend auto-booking presets (⚙️ Мои подписки) |
 
 An **Unsubscribe** inline button is also shown in the welcome message.
 
@@ -121,7 +124,9 @@ sport-bot/
 │           ├── auth.handler.js
 │           ├── subscription.handler.js
 │           ├── schedule.handler.js
-│           └── booking.handler.js
+│           ├── booking.handler.js
+│           ├── mybookings.handler.js
+│           └── subscription-preset.handler.js
 ├── db.json                          # Persistent store (subscribers, schedule state, sessions, waitlist)
 ├── package.json
 ├── .env                             # Environment variables (do not commit!)

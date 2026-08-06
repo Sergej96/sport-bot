@@ -15,6 +15,7 @@ import * as bookingService from '../../services/booking.service.js';
 import * as storage from '../../services/storage.service.js';
 import * as auth from '../../services/auth.service.js';
 import { formatDateEuro } from '../../utils/dates.js';
+import { fitLabel } from '../../utils/text.js';
 import * as logger from '../../utils/logger.js';
 
 // Ephemeral cache so cancellation can confirm "✅ Запись на {activity_name}
@@ -33,12 +34,13 @@ function getCachedLabel(chatId, bookingId) {
   return bookingLabelCache.get(chatId)?.get(bookingId) ?? null;
 }
 
-function formatWhen(dateStr, startTime, endTime) {
-  const time = startTime && endTime ? `${startTime.slice(0, 5)}–${endTime.slice(0, 5)}` : '';
+/** Formats a button label as "training type · day · time" — nothing else. */
+function formatWhen(dateStr, startTime) {
+  const time = startTime ? startTime.slice(0, 5) : '';
   return [formatDateEuro(dateStr) ?? '—', time].filter(Boolean).join(' · ');
 }
 
-/** Fetches + renders the combined list. Populates the label cache as a side effect. */
+/** Fetches + renders the combined list as cancel buttons only. Populates the label cache as a side effect. */
 async function renderMyBookings(ctx) {
   const chatId = String(ctx.chat.id);
   const user = await storage.getUser(chatId);
@@ -68,7 +70,6 @@ async function renderMyBookings(ctx) {
     return;
   }
 
-  const lines = ['📋 <b>Мои записи</b>', ''];
   const keyboardRows = [];
 
   for (const booking of realBookings) {
@@ -78,24 +79,18 @@ async function renderMyBookings(ctx) {
     const label = desc.activityName ?? 'Тренировка';
     cacheLabel(chatId, desc.id, label);
 
-    lines.push(`🏋️ <b>${label}</b>`);
-    if (desc.venueName) lines.push(`📍 ${desc.venueName}`);
-    lines.push(`🗓 ${formatWhen(desc.dateStr, desc.startTime, desc.endTime)}`, '');
-
-    keyboardRows.push([Markup.button.callback(`❌ Отменить: ${label}`, `cb:${desc.id}`)]);
+    const text = fitLabel({ before: '❌ ', name: label, after: ` · ${formatWhen(desc.dateStr, desc.startTime)}` });
+    keyboardRows.push([Markup.button.callback(text, `cb:${desc.id}`)]);
   }
 
   for (const item of queueItems) {
     const label = item.activityName ?? 'Тренировка';
 
-    lines.push(`⏳ <b>${label}</b> (в очереди на авто-бронирование)`);
-    if (item.venueName) lines.push(`📍 ${item.venueName}`);
-    lines.push(`🗓 ${formatWhen(item.dateStr, item.startTime, item.endTime)}`, '');
-
-    keyboardRows.push([Markup.button.callback(`❌ Убрать из очереди: ${label}`, `cq:${item.id}`)]);
+    const text = fitLabel({ before: '⏳ ', name: label, after: ` · ${formatWhen(item.dateStr, item.startTime)}` });
+    keyboardRows.push([Markup.button.callback(text, `cq:${item.id}`)]);
   }
 
-  await ctx.replyWithHTML(lines.join('\n'), Markup.inlineKeyboard(keyboardRows));
+  await ctx.replyWithHTML('📋 <b>Мои записи</b>', Markup.inlineKeyboard(keyboardRows));
 }
 
 export function registerMyBookingsHandlers(bot) {

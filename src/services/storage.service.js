@@ -34,6 +34,11 @@
  *     attempts, lastAttemptAt, lastError,
  *     bookingId: string|null,  — the real API booking id, set once COMPLETED (see /my_bookings cancel flow)
  *   }>
+ *   auto_subscriptions: Array<{
+ *     id, userId, dayOfWeek: 'Saturday'|'Sunday', activityName, startTime: 'HH:mm:ss',
+ *     createdAt, isActive: boolean, removedAt?: string,
+ *   }>  — weekend auto-booking presets (see watcher.service pollAutoSubscriptionPresets
+ *        and bot/handlers/subscription-preset.handler.js)
  */
 
 import { readFile, writeFile, rename } from 'fs/promises';
@@ -47,6 +52,7 @@ const DEFAULT_DB = {
   notification_subscriptions: [],
   users: {},
   booking_queue: [],
+  auto_subscriptions: [],
 };
 
 // Serializes writes so concurrent callers can't interleave.
@@ -208,6 +214,104 @@ export async function cancelQueueItem(id, userId) {
     if (!item || item.status !== 'PENDING') return null;
     item.status = 'CANCELLED';
     item.cancelledAt = new Date().toISOString();
+    return item;
+  });
+}
+
+/**
+ * True if this user has ANY queue entry (any status — PENDING, COMPLETED,
+ * FAILED, or CANCELLED) for this event. Used by the auto-subscription
+ * trigger to stay idempotent across polling ticks: once a match has been
+ * handled once (booked, queued, or given up on), later ticks skip it
+ * instead of re-attempting the same booking every minute.
+ */
+export async function hasAnyQueueItemForEvent(userId, eventId) {
+  const db = await readDb();
+  return db.booking_queue.some(item => item.userId === String(userId) && item.eventId === eventId);
+}
+
+/**
+ * Adds a queue item that's already resolved — used by the auto-subscription
+ * trigger's immediate-success path (booked directly, never actually waited
+ * in the queue) so it still shows up for the idempotency check above and,
+ * incidentally, in any future queue-history view.
+ */
+export async function addCompletedQueueItem({ userId, eventId, activityName, dateStr, startTime, endTime, venueName, bookingId }) {
+  return updateDb(db => {
+    const now = new Date().toISOString();
+    const item = {
+      id: crypto.randomUUID(),
+      userId: String(userId),
+      eventId,
+      activityName: activityName ?? null,
+      dateStr: dateStr ?? null,
+      startTime: startTime ?? null,
+      endTime: endTime ?? null,
+      venueName: venueName ?? null,
+      addedAt: now,
+      status: 'COMPLETED',
+      attempts: 1,
+      lastAttemptAt: now,
+      lastError: null,
+      bookingId: bookingId ?? null,
+    };
+    db.booking_queue.push(item);
+    return item;
+  });
+}
+
+// ─── Auto-subscription (weekend preset) accessors ─────────────────────────
+
+/** All active auto-booking presets, across all users — the watcher matches these against freshly-polled weekend schedules. */
+export async function getActiveAutoSubscriptions() {
+  const db = await readDb();
+  return db.auto_subscriptions.filter(s => s.isActive);
+}
+
+/** One user's active presets — powers the "⚙️ Мои подписки" list. */
+export async function getAutoSubscriptionsForUser(userId) {
+  const db = await readDb();
+  return db.auto_subscriptions.filter(s => s.isActive && s.userId === String(userId));
+}
+
+/**
+ * The Time Conflict Guard: finds this user's existing active preset (if
+ * any) for this exact day+time slot, regardless of activity. The caller
+ * decides whether it's a true conflict (different activity) or just a
+ * repeat of the same preset.
+ */
+export async function findConflictingAutoSubscription(userId, dayOfWeek, startTime) {
+  const db = await readDb();
+  return (
+    db.auto_subscriptions.find(
+      s => s.isActive && s.userId === String(userId) && s.dayOfWeek === dayOfWeek && s.startTime === startTime
+    ) ?? null
+  );
+}
+
+export async function addAutoSubscription({ userId, dayOfWeek, activityName, startTime }) {
+  return updateDb(db => {
+    const item = {
+      id: crypto.randomUUID(),
+      userId: String(userId),
+      dayOfWeek,
+      activityName,
+      startTime,
+      createdAt: new Date().toISOString(),
+      isActive: true,
+    };
+    db.auto_subscriptions.push(item);
+    return item;
+  });
+}
+
+/** Deactivates a user's own preset. Returns null if it doesn't exist, isn't theirs, or is already inactive. */
+export async function removeAutoSubscription(id, userId) {
+  return updateDb(db => {
+    const item = db.auto_subscriptions.find(s => s.id === id && s.userId === String(userId));
+    if (!item || !item.isActive) return null;
+    item.isActive = false;
+    item.removedAt = new Date().toISOString();
     return item;
   });
 }

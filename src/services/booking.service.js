@@ -213,6 +213,110 @@ async function handleFailure(item, err, bot, now) {
   });
 }
 
+/**
+ * Finds this user's already-confirmed booking for this exact training (same
+ * activity + date + start time), if any — matched on those fields rather
+ * than an event id since the booking API's response shape for that isn't
+ * confirmed (see describeBooking). Used to keep an auto-subscription from
+ * firing a duplicate booking request when the user already signed up for it
+ * some other way (manually via /schedule, the venue's own site, etc.).
+ */
+async function findExistingBooking(telegramId, { activityName, dateStr, startTime }) {
+  const bookings = await getUserBookings(telegramId);
+  return (
+    bookings.find(b => {
+      const desc = describeBooking(b);
+      return desc.activityName === activityName && desc.dateStr === dateStr && desc.startTime === startTime;
+    }) ?? null
+  );
+}
+
+/**
+ * Handles one (preset, matched event) pair discovered by the watcher's
+ * pollAutoSubscriptionPresets tick: attempts to book immediately, falling
+ * back to the waitlist queue on failure/full — the spec's "Fallback &
+ * Waitlist Delegation". Idempotent across ticks via
+ * storage.hasAnyQueueItemForEvent, so a match that's already been handled
+ * once (booked, queued, or given up on) is skipped on subsequent polls.
+ */
+export async function processAutoSubscriptionMatch({ userId, event, activity, dateStr }, bot) {
+  const alreadyHandled = await storage.hasAnyQueueItemForEvent(userId, event.event_id);
+  if (alreadyHandled) return;
+
+  const meta = {
+    activityName: activity.activity_name,
+    dateStr,
+    startTime: event.start_time,
+    endTime: event.end_time,
+    venueName: event.venue_name,
+  };
+
+  // Already signed up for this training some other way — no need to send a
+  // booking request at all, just record it so future ticks skip it too.
+  // Any failure here (reauth, API hiccup) just falls through to the normal
+  // attempt below, which handles/reports the same failure modes anyway.
+  try {
+    const existingBooking = await findExistingBooking(userId, meta);
+    if (existingBooking) {
+      logger.info('watcher', 'Auto-subscription skipped — already booked', { userId, eventId: event.event_id });
+      await storage.addCompletedQueueItem({
+        userId,
+        eventId: event.event_id,
+        ...meta,
+        bookingId: describeBooking(existingBooking).id,
+      });
+      return;
+    }
+  } catch (err) {
+    logger.warn('watcher', 'Could not check existing bookings before auto-subscription attempt, proceeding anyway', {
+      userId,
+      eventId: event.event_id,
+      error: err.message,
+    });
+  }
+
+  try {
+    const booking = await bookEvent(userId, event.event_id);
+    await storage.addCompletedQueueItem({
+      userId,
+      eventId: event.event_id,
+      ...meta,
+      bookingId: describeBooking(booking).id,
+    });
+
+    logger.info('watcher', 'Auto-subscription booking succeeded', { userId, eventId: event.event_id });
+    await notifySafely(bot, userId,
+      `⚡ <b>Auto-Booking Executed!</b>\n` +
+      `<b>Activity:</b> ${meta.activityName}\n` +
+      `<b>Date &amp; Time:</b> ${formatDateEuro(dateStr)} at ${event.start_time.slice(0, 5)}`
+    );
+  } catch (err) {
+    if (err instanceof auth.ReauthRequiredError) {
+      logger.warn('watcher', 'Auto-subscription skipped — reauth required', { userId, eventId: event.event_id });
+      await notifySafely(bot, userId,
+        `⚠️ Не удалось выполнить авто-подписку на «${meta.activityName}» — сессия истекла.\n` +
+        `Отправь /login, чтобы войти снова.`
+      );
+      return;
+    }
+
+    const status = err.normalized?.status ?? err.response?.status ?? null;
+    if (status !== null && UNRECOVERABLE_STATUSES.has(status)) {
+      // Event vanished/expired — nothing to fall back to.
+      logger.warn('watcher', 'Auto-subscription booking unrecoverable, skipping', { userId, eventId: event.event_id, status });
+      return;
+    }
+
+    // Full / 5xx / timeout — don't discard, hand it to the waitlist watcher.
+    logger.info('watcher', 'Auto-subscription slot full, deferring to waitlist queue', { userId, eventId: event.event_id });
+    await storage.addQueueItem({ userId, eventId: event.event_id, ...meta });
+    await notifySafely(bot, userId,
+      `⏳ <b>Slots Full for Auto-Subscription:</b> ${meta.activityName} (${event.start_time.slice(0, 5)}). ` +
+      `Added to automatic waitlist queue — will book as soon as a spot opens!`
+    );
+  }
+}
+
 async function notifySafely(bot, chatId, message) {
   try {
     await bot.telegram.sendMessage(chatId, message, { parse_mode: 'HTML' });
