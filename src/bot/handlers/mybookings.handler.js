@@ -40,6 +40,15 @@ function formatWhen(dateStr, startTime) {
   return [formatDateEuro(dateStr) ?? '—', time].filter(Boolean).join(' · ');
 }
 
+/**
+ * Chronological sort key: "YYYY-MM-DD" + "HH:mm:ss" concatenate into a
+ * plain string that already sorts correctly (day first, then time within
+ * the day) with nothing fancier than localeCompare.
+ */
+function chronoKey(dateStr, startTime) {
+  return `${dateStr ?? ''}${startTime ?? ''}`;
+}
+
 /** Fetches + renders the combined list as cancel buttons only. Populates the label cache as a side effect. */
 async function renderMyBookings(ctx) {
   const chatId = String(ctx.chat.id);
@@ -72,10 +81,12 @@ async function renderMyBookings(ctx) {
 
   const keyboardRows = [];
 
-  for (const booking of realBookings) {
-    const desc = bookingService.describeBooking(booking);
-    if (!desc.id) continue; // Can't build a cancel button without an id — skip rather than show a dead button.
+  const sortedBookings = realBookings
+    .map(booking => bookingService.describeBooking(booking))
+    .filter(desc => desc.id) // Can't build a cancel button without an id — skip rather than show a dead button.
+    .sort((a, b) => chronoKey(a.dateStr, a.startTime).localeCompare(chronoKey(b.dateStr, b.startTime)));
 
+  for (const desc of sortedBookings) {
     const label = desc.activityName ?? 'Тренировка';
     cacheLabel(chatId, desc.id, label);
 
@@ -83,7 +94,11 @@ async function renderMyBookings(ctx) {
     keyboardRows.push([Markup.button.callback(text, `cb:${desc.id}`)]);
   }
 
-  for (const item of queueItems) {
+  const sortedQueueItems = [...queueItems].sort(
+    (a, b) => chronoKey(a.dateStr, a.startTime).localeCompare(chronoKey(b.dateStr, b.startTime))
+  );
+
+  for (const item of sortedQueueItems) {
     const label = item.activityName ?? 'Тренировка';
 
     const text = fitLabel({ before: '⏳ ', name: label, after: ` · ${formatWhen(item.dateStr, item.startTime)}` });
