@@ -12,6 +12,7 @@ A Telegram bot that monitors the free Saturday workout schedule at **Park 50th A
 - Max 2 notifications per date to prevent spam
 - Alerts the admin if the API fails 5 times in a row
 - Subscribe / unsubscribe via Telegram commands
+- Pick your active venue from the live venue directory (`/venue`) before booking — no more hardcoded single location
 - Log in with your спортдлявсех.бел account to book directly from the chat
 - Full events can be added to an auto-booking waitlist — a background watcher retries every 60 seconds and notifies you the moment a slot is secured
 - Pre-configure weekend auto-subscriptions (day + activity + time slot) via `/my_subscriptions` — the moment a matching event appears in a freshly-polled Saturday/Sunday schedule, the bot books it automatically, falling back to the waitlist queue if it's already full
@@ -70,7 +71,8 @@ npm run dev
 |---|---|
 | `/start` | Subscribe to schedule notifications |
 | `/stop` | Unsubscribe from notifications |
-| `/schedule` | Browse the schedule and book / waitlist events |
+| `/book`, `/schedule` | Browse the schedule and book / waitlist events (prompts for a venue first, if none is set) |
+| `/venue` | View or change your active venue |
 | `/login` | Log in with your спортдлявсех.бел account (email + password, asked as chat messages) |
 | `/logout` | Forget your stored session |
 | `/my_bookings` | View and cancel your active bookings / waitlist items |
@@ -116,13 +118,15 @@ sport-bot/
 │   │   ├── auth.service.js          # Login, token refresh, re-login fallback
 │   │   ├── booking.service.js       # Book event / waitlist queue / queue processing
 │   │   ├── schedule.service.js      # Schedule fetch + message builders
+│   │   ├── venue.service.js         # GET /venues + in-memory cache (TTL, stale-on-error fallback)
 │   │   └── watcher.service.js       # 60s schedule poll + 60s auto-booking watcher
 │   └── bot/
 │       ├── index.js                 # Telegraf instance + handler wiring
-│       ├── session.js               # In-memory /login dialogue state
+│       ├── session.js               # In-memory step tracker (/login dialogue, SELECT_VENUE)
 │       └── handlers/
 │           ├── auth.handler.js
 │           ├── subscription.handler.js
+│           ├── venue.handler.js
 │           ├── schedule.handler.js
 │           ├── booking.handler.js
 │           ├── mybookings.handler.js

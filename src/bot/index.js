@@ -4,6 +4,7 @@ import { Telegraf } from 'telegraf';
 import { BOT_TOKEN } from '../config.js';
 import { registerAuthHandlers } from './handlers/auth.handler.js';
 import { registerSubscriptionHandlers } from './handlers/subscription.handler.js';
+import { registerVenueHandlers } from './handlers/venue.handler.js';
 import { registerScheduleHandlers } from './handlers/schedule.handler.js';
 import { registerBookingHandlers } from './handlers/booking.handler.js';
 import { registerMyBookingsHandlers } from './handlers/mybookings.handler.js';
@@ -18,6 +19,10 @@ export function createBot() {
   // and next() through to everything else otherwise.
   registerAuthHandlers(bot);
   registerSubscriptionHandlers(bot);
+  // Before schedule/booking: schedule.handler calls into
+  // venue.handler.ensureActiveVenue, so its sv:/venue:* actions need to
+  // already be registered.
+  registerVenueHandlers(bot);
   registerScheduleHandlers(bot);
   registerBookingHandlers(bot);
   registerMyBookingsHandlers(bot);
@@ -27,7 +32,9 @@ export function createBot() {
   bot.telegram.setMyCommands([
     { command: 'start', description: 'Подписаться на уведомления' },
     { command: 'stop', description: 'Отписаться от уведомлений' },
+    { command: 'book', description: 'Забронировать тренировку' },
     { command: 'schedule', description: 'Расписание тренировок' },
+    { command: 'venue', description: '📍 Моя площадка' },
     { command: 'my_subscriptions', description: '⚙️ Мои подписки на авто-бронирование' },
     { command: 'my_bookings', description: 'Мои записи' },
     { command: 'login', description: 'Войти в спортдлявсех.бел' },

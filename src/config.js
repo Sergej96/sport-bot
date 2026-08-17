@@ -27,8 +27,25 @@ export const SCHEDULE_API_URL = `${API_BASE_URL}/schedule`;
 export const LOGIN_API_URL = `${API_BASE_URL}/auth/login`;
 export const REFRESH_API_URL = `${API_BASE_URL}/auth/refresh`;
 export const BOOKINGS_API_URL = `${API_BASE_URL}/bookings`;
+export const VENUES_API_URL = `${API_BASE_URL}/venues`;
 
-export const VENUE_ID = '55d51f65-d18c-4a49-bf3d-d5ed17b72c3a';
+// Historically the only venue the bot ever booked against — now just the
+// fallback used by the non-interactive broadcast/poll paths in
+// watcher.service.js (which aren't tied to one user) and by venue.service.js
+// if a caller ever needs *some* venue before the directory has loaded.
+// Interactive flows (/schedule, /book, /venue) use the user's own selection
+// instead — see storage.service getUserVenue/setUserVenue.
+export const DEFAULT_VENUE_ID = '55d51f65-d18c-4a49-bf3d-d5ed17b72c3a';
+// Display fallback for the above, used by the one-time existing-user
+// backfill (see storage.backfillDefaultVenue) if the venue directory API
+// can't be reached at startup to resolve the live name.
+export const DEFAULT_VENUE_NAME = '1. Парк 50-летия В.Октября';
+
+// How long the fetched venues list is cached in memory before venue.service
+// refetches it (see venue.service.js getVenues). 10–15 min balances "don't
+// hammer /api/v1/venues on every /schedule tap" against "a newly added venue
+// shows up reasonably soon". Overridable for ops/testing.
+export const VENUE_CACHE_TTL_MS = Number(process.env.VENUE_CACHE_TTL_MS) || 12 * 60 * 1000;
 
 // No general booking API existed when this bot was first built, so
 // "Book"/"Quick Book" buttons for logged-out users still just deep-link to

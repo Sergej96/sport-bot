@@ -6,19 +6,43 @@
 
 import { Markup } from 'telegraf';
 import { apiClient } from './api.service.js';
-import { SCHEDULE_API_URL, VENUE_ID, BOOKING_URL } from '../config.js';
-import { formatDateRu } from '../utils/dates.js';
+import { SCHEDULE_API_URL, DEFAULT_VENUE_ID, BOOKING_URL } from '../config.js';
+import { formatDateRu, getNextWeekendDates } from '../utils/dates.js';
 
-export async function fetchSchedule(dateParam, dayOfWeek = 'saturday', entryType = 'limited') {
+/**
+ * Fetches the schedule for one venue. `venueId` defaults to
+ * DEFAULT_VENUE_ID so the non-interactive broadcast/poll paths in
+ * watcher.service.js (not tied to any one user) keep working unchanged;
+ * every interactive per-user flow (schedule.handler, booking.handler) passes
+ * the caller's own active venue explicitly (see storage.getUserVenue).
+ */
+export async function fetchSchedule(dateParam, dayOfWeek = 'saturday', entryType = 'limited', venueId = DEFAULT_VENUE_ID) {
   const response = await apiClient.get(SCHEDULE_API_URL, {
     params: {
       date_param: dateParam,
       day_of_week: dayOfWeek,
       entry_type: entryType,
-      venue_ids: VENUE_ID,
+      venue_ids: venueId,
     },
   });
   return response.data;
+}
+
+/**
+ * Builds the Saturday-or-Sunday date-picker message + keyboard — the first
+ * screen of the schedule browser. Pulled out as a pure builder (rather than
+ * living only in schedule.handler's sendDatePicker) so venue.handler can
+ * render the exact same screen right after a venue is picked, without a
+ * handler-to-handler import.
+ */
+export function buildDatePickerMessage() {
+  const { saturday, sunday } = getNextWeekendDates();
+  const text = '📅 Выбери день:';
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback(saturday.label, `d:${saturday.dateStr}`)],
+    [Markup.button.callback(sunday.label, `d:${sunday.dateStr}`)],
+  ]);
+  return { text, keyboard };
 }
 
 /**

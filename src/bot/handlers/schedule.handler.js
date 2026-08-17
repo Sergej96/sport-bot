@@ -1,30 +1,47 @@
 /**
- * /schedule command + the date → activity → event-list navigation, plus the
- * one-shot "🔔 Notify Me" subscription action. Moved from bot.js.
+ * /schedule (aliased as /book) + the date → activity → event-list
+ * navigation, plus the one-shot "🔔 Notify Me" subscription action. Moved
+ * from bot.js.
+ *
+ * Gated behind a venue: /schedule|/book first calls
+ * venue.handler.ensureActiveVenue, which either returns the user's already-
+ * saved venue_id or kicks off the SELECT_VENUE step and stops the update
+ * here (see venue.handler.js for how the flow resumes into sendDatePicker
+ * once a venue is picked). Every fetchSchedule call below then reads the
+ * active venue fresh from storage rather than threading it through
+ * callback_data — see venue.handler.js's header comment for why.
  */
 
 import { Markup } from 'telegraf';
 import * as scheduleService from '../../services/schedule.service.js';
 import * as storage from '../../services/storage.service.js';
-import { getNextWeekendDates, dayOfWeekFor, formatDateRu } from '../../utils/dates.js';
+import { ensureActiveVenue } from './venue.handler.js';
+import { dayOfWeekFor, formatDateRu } from '../../utils/dates.js';
 import * as logger from '../../utils/logger.js';
 
-/** Step 1: sends/edits the Saturday-or-Sunday date picker. */
+/** Step 0 (gated by /schedule|/book): sends/edits the Saturday-or-Sunday date picker. */
 async function sendDatePicker(ctx, edit = false) {
-  const { saturday, sunday } = getNextWeekendDates();
-  const text = '📅 Выбери день:';
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback(saturday.label, `d:${saturday.dateStr}`)],
-    [Markup.button.callback(sunday.label, `d:${sunday.dateStr}`)],
-  ]);
-
+  const { text, keyboard } = scheduleService.buildDatePickerMessage();
   if (edit) await ctx.editMessageText(text, keyboard);
   else await ctx.reply(text, keyboard);
 }
 
-/** Step 2: sends/edits the list of activities available on a given date. */
+/**
+ * Step 1: sends/edits the list of activities available on a given date, for
+ * the caller's active venue (see storage.getUserVenue). The venue gate in
+ * the /schedule|/book command means this should always be set by the time
+ * we get here — the check is just a defensive fallback, not the primary UX.
+ */
 async function sendActivityPicker(ctx, dateStr, edit = false) {
-  const data = await scheduleService.fetchSchedule(dateStr, dayOfWeekFor(dateStr));
+  const activeVenue = await storage.getUserVenue(ctx.chat.id);
+  if (!activeVenue) {
+    const text = '📍 Активная площадка не выбрана. Отправь /venue, чтобы выбрать.';
+    if (edit) await ctx.editMessageText(text);
+    else await ctx.reply(text);
+    return;
+  }
+
+  const data = await scheduleService.fetchSchedule(dateStr, dayOfWeekFor(dateStr), 'limited', activeVenue.id);
   const activities = (data.activities ?? []).filter(a => a.events?.length);
 
   if (activities.length === 0) {
@@ -47,8 +64,15 @@ async function sendActivityPicker(ctx, dateStr, edit = false) {
 }
 
 export function registerScheduleHandlers(bot) {
-  bot.command('schedule', async ctx => {
+  // /book is an alias — same flow, named to match the spec's "initiation" trigger.
+  bot.command(['schedule', 'book'], async ctx => {
     try {
+      // Step 0 (SELECT_VENUE gate): no active venue yet → shows the picker
+      // and bails; the flow resumes into sendDatePicker via venue.handler's
+      // sv: action once one is chosen.
+      const venueId = await ensureActiveVenue(ctx, { resume: 'schedule' });
+      if (!venueId) return;
+
       await sendDatePicker(ctx, false);
     } catch (err) {
       logger.error('bot', '/schedule error', { error: err.message });
@@ -73,7 +97,13 @@ export function registerScheduleHandlers(bot) {
 
     try {
       await ctx.answerCbQuery();
-      const data = await scheduleService.fetchSchedule(dateStr, dayOfWeekFor(dateStr));
+      const activeVenue = await storage.getUserVenue(ctx.chat.id);
+      if (!activeVenue) {
+        await ctx.editMessageText('📍 Активная площадка не выбрана. Отправь /venue, чтобы выбрать.');
+        return;
+      }
+
+      const data = await scheduleService.fetchSchedule(dateStr, dayOfWeekFor(dateStr), 'limited', activeVenue.id);
       const activity = (data.activities ?? []).find(a => a.activity_id === activityId);
 
       if (!activity || !activity.events?.length) {
@@ -116,7 +146,13 @@ export function registerScheduleHandlers(bot) {
     const chatId = String(ctx.chat.id);
 
     try {
-      const data = await scheduleService.fetchSchedule(dateStr, dayOfWeekFor(dateStr));
+      const activeVenue = await storage.getUserVenue(ctx.chat.id);
+      if (!activeVenue) {
+        await ctx.answerCbQuery('📍 Активная площадка не выбрана. Отправь /venue.', { show_alert: true });
+        return;
+      }
+
+      const data = await scheduleService.fetchSchedule(dateStr, dayOfWeekFor(dateStr), 'limited', activeVenue.id);
 
       let matchedEvent, matchedActivity;
       outer: for (const activity of data.activities ?? []) {

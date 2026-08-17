@@ -1,7 +1,13 @@
 /**
- * Minimal in-memory per-chat step tracker for the /login dialogue. Deliberately
- * not persisted — a restart mid-login just means the user types /login again,
- * and it avoids ever writing an in-progress plaintext password to disk.
+ * Minimal in-memory per-chat step tracker for short multi-step dialogues.
+ * Deliberately not persisted — a restart mid-flow just means the user starts
+ * that command again (e.g. /login), and for /login specifically it also
+ * avoids ever writing an in-progress plaintext password to disk.
+ *
+ * Steps in use:
+ *   - 'awaiting_email' / 'awaiting_password' — the /login dialogue (see auth.handler.js)
+ *   - 'SELECT_VENUE' — waiting for a venue picker tap; `resume` says what to
+ *     continue into afterwards ('schedule', 'welcome', or null). See venue.handler.js.
  */
 
 const sessions = new Map();

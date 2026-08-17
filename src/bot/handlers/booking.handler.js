@@ -6,13 +6,14 @@
 
 import * as scheduleService from '../../services/schedule.service.js';
 import * as bookingService from '../../services/booking.service.js';
+import * as storage from '../../services/storage.service.js';
 import * as auth from '../../services/auth.service.js';
 import { dayOfWeekFor } from '../../utils/dates.js';
 import * as logger from '../../utils/logger.js';
 
-/** Finds the activity+event pair for an event_id on a given date. */
-async function findEvent(dateStr, eventId) {
-  const data = await scheduleService.fetchSchedule(dateStr, dayOfWeekFor(dateStr));
+/** Finds the activity+event pair for an event_id on a given date, within one venue. */
+async function findEvent(venueId, dateStr, eventId) {
+  const data = await scheduleService.fetchSchedule(dateStr, dayOfWeekFor(dateStr), 'limited', venueId);
   for (const activity of data.activities ?? []) {
     for (const event of activity.events ?? []) {
       if (event.event_id === eventId) return { activity, event };
@@ -27,8 +28,14 @@ export function registerBookingHandlers(bot) {
     const [, dateStr, eventId] = ctx.match;
     const chatId = String(ctx.chat.id);
 
+    const activeVenue = await storage.getUserVenue(chatId);
+    if (!activeVenue) {
+      await ctx.answerCbQuery('📍 Активная площадка не выбрана. Отправь /venue.', { show_alert: true });
+      return;
+    }
+
     try {
-      const { activity, event } = await findEvent(dateStr, eventId);
+      const { activity, event } = await findEvent(activeVenue.id, dateStr, eventId);
       if (!event) {
         await ctx.answerCbQuery('Это занятие больше не найдено.', { show_alert: true });
         return;
@@ -51,7 +58,7 @@ export function registerBookingHandlers(bot) {
         // Lost the race — slot filled between browsing and clicking. Fall
         // back to the waitlist automatically instead of just failing.
         try {
-          const { activity, event } = await findEvent(dateStr, eventId);
+          const { activity, event } = await findEvent(activeVenue.id, dateStr, eventId);
           await bookingService.addToQueue(chatId, eventId, {
             activityName: activity?.activity_name,
             dateStr,
@@ -80,8 +87,14 @@ export function registerBookingHandlers(bot) {
     const [, dateStr, eventId] = ctx.match;
     const chatId = String(ctx.chat.id);
 
+    const activeVenue = await storage.getUserVenue(chatId);
+    if (!activeVenue) {
+      await ctx.answerCbQuery('📍 Активная площадка не выбрана. Отправь /venue.', { show_alert: true });
+      return;
+    }
+
     try {
-      const { activity, event } = await findEvent(dateStr, eventId);
+      const { activity, event } = await findEvent(activeVenue.id, dateStr, eventId);
       if (!event) {
         await ctx.answerCbQuery('Это занятие больше не найдено.', { show_alert: true });
         return;

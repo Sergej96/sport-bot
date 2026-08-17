@@ -25,6 +25,8 @@
  *     telegram_id, email, access_token, refresh_token,
  *     access_token_expires_at: string|null,   — ISO timestamp, if decodable from the JWT
  *     encrypted_password: { iv, tag, data } | null,
+ *     venue_id: string|null,    — the user's active venue (see venue.service.js), independent of auth
+ *     venue_name: string|null,  — cached label, avoids a venue-directory lookup just to render it
  *     created_at, updated_at,
  *   }>
  *   booking_queue: Array<{
@@ -39,6 +41,9 @@
  *     createdAt, isActive: boolean, removedAt?: string,
  *   }>  — weekend auto-booking presets (see watcher.service pollAutoSubscriptionPresets
  *        and bot/handlers/subscription-preset.handler.js)
+ *   migrations: {
+ *     defaultVenueBackfill: boolean,  — true once backfillDefaultVenue has run; see bot.js
+ *   }
  */
 
 import { readFile, writeFile, rename } from 'fs/promises';
@@ -53,6 +58,7 @@ const DEFAULT_DB = {
   users: {},
   booking_queue: [],
   auto_subscriptions: [],
+  migrations: { defaultVenueBackfill: false },
 };
 
 // Serializes writes so concurrent callers can't interleave.
@@ -113,22 +119,33 @@ export async function getUser(telegramId) {
   return db.users[String(telegramId)] ?? null;
 }
 
+/**
+ * Merges `fields` onto `existing` (if any), filling every other known field
+ * with its current value or a safe default. Shared by upsertUser and
+ * backfillDefaultVenue so the user-record shape only needs to be listed in
+ * one place.
+ */
+function buildUserRecord(existing, fields, now) {
+  return {
+    telegram_id: existing?.telegram_id ?? null,
+    email: existing?.email ?? null,
+    access_token: existing?.access_token ?? null,
+    refresh_token: existing?.refresh_token ?? null,
+    access_token_expires_at: existing?.access_token_expires_at ?? null,
+    encrypted_password: existing?.encrypted_password ?? null,
+    venue_id: existing?.venue_id ?? null,
+    venue_name: existing?.venue_name ?? null,
+    created_at: existing?.created_at ?? now,
+    ...fields,
+    updated_at: now,
+  };
+}
+
 export async function upsertUser(telegramId, fields) {
   return updateDb(db => {
     const id = String(telegramId);
     const now = new Date().toISOString();
-    const existing = db.users[id];
-    db.users[id] = {
-      telegram_id: id,
-      email: existing?.email ?? null,
-      access_token: existing?.access_token ?? null,
-      refresh_token: existing?.refresh_token ?? null,
-      access_token_expires_at: existing?.access_token_expires_at ?? null,
-      encrypted_password: existing?.encrypted_password ?? null,
-      created_at: existing?.created_at ?? now,
-      ...fields,
-      updated_at: now,
-    };
+    db.users[id] = buildUserRecord(db.users[id], { telegram_id: id, ...fields }, now);
     return db.users[id];
   });
 }
@@ -139,6 +156,60 @@ export async function deleteUser(telegramId) {
     const existed = id in db.users;
     delete db.users[id];
     return existed;
+  });
+}
+
+// ─── Venue preference accessors ────────────────────────────────────────────
+
+/**
+ * The user's active/default venue, if they've picked one via the
+ * SELECT_VENUE flow or /venue. Independent of login — picking a venue
+ * doesn't require a спортдлявсех.бел account. Returns null if never set.
+ */
+export async function getUserVenue(telegramId) {
+  const user = await getUser(telegramId);
+  if (!user?.venue_id) return null;
+  return { id: user.venue_id, name: user.venue_name ?? null };
+}
+
+/** Persists the user's active venue choice. See bot/handlers/venue.handler.js. */
+export async function setUserVenue(telegramId, { id, name }) {
+  return upsertUser(telegramId, { venue_id: id, venue_name: name ?? null });
+}
+
+/**
+ * One-time migration: gives every user known to the bot *before* venue
+ * selection existed (anyone already in chat_ids or users) a default active
+ * venue, so they're never interrupted by the SELECT_VENUE picker on their
+ * next /schedule|/book — only genuinely new subscribers (see
+ * subscription.handler's /start) go through that. Guarded by
+ * migrations.defaultVenueBackfill so it only ever runs once, no matter how
+ * many times the bot restarts — a user who deliberately clears their venue
+ * later isn't "re-defaulted" by a later restart.
+ *
+ * Never overwrites a venue a user already has (e.g. someone who'd already
+ * picked one via an earlier build of this feature).
+ *
+ * @returns {Promise<{ applied: boolean, count: number }>} applied=false means
+ *   this had already run before; count is how many user records were touched.
+ */
+export async function backfillDefaultVenue({ id: venueId, name: venueName }) {
+  return updateDb(db => {
+    if (db.migrations?.defaultVenueBackfill) return { applied: false, count: 0 };
+
+    const now = new Date().toISOString();
+    const knownIds = new Set([...db.chat_ids, ...Object.keys(db.users)]);
+    let count = 0;
+
+    for (const id of knownIds) {
+      const existing = db.users[id];
+      if (existing?.venue_id) continue;
+      db.users[id] = buildUserRecord(existing, { telegram_id: id, venue_id: venueId, venue_name: venueName }, now);
+      count++;
+    }
+
+    db.migrations = { ...db.migrations, defaultVenueBackfill: true };
+    return { applied: true, count };
   });
 }
 
