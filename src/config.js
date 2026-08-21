@@ -68,22 +68,28 @@ export const WEEKDAYS_EN = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursda
 // for activity names — matching is a strict equality check, so this list
 // must stay in sync with what the schedule API actually returns.
 export const ACTIVITIES = [
+  'Bosu-тренинг',
   'Dance mix',
   'Power Body',
   'ProJumping',
+  'Аэростретчинг',
+  'Барре',
   'Беговая тренировка',
   'Волейбол',
   'Воркаут',
   'Здоровая спина',
   'Зумба',
   'Йога',
+  'Йога в гамаках',
   'Кроссфит',
   'Пилатес',
   'Сайклинг',
   'Скандинавская ходьба',
   'Соло-латина',
+  'Стэп-аэробика',
   'Стретчинг',
   'Стритбол',
+  'Цигун'
 ];
 
 export const TIME_SLOTS = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
