@@ -18,6 +18,7 @@ import {
   POLL_INTERVAL_MS,
   MAX_NOTIFICATIONS,
   MAX_CONSECUTIVE_FAILURES,
+  DEFAULT_VENUE_ID,
 } from '../config.js';
 import { getNextSaturday, getNextWeekendDates, dayOfWeekFor, hasEventStarted } from '../utils/dates.js';
 import * as logger from '../utils/logger.js';
@@ -221,27 +222,40 @@ async function pollAutoSubscriptionPresets(bot) {
     const dayPresets = presets.filter(p => p.dayOfWeek === dayName);
     if (dayPresets.length === 0) continue;
 
-    let data;
-    try {
-      data = await scheduleService.fetchSchedule(dateStr, dayOfWeekFor(dateStr));
-    } catch (err) {
-      logger.error('watcher', 'Auto-subscription schedule fetch failed', { dateStr, error: err.message });
-      continue;
+    // Presets pin the venue that was active when they were created (see
+    // storage.addAutoSubscription), so different users/presets can point at
+    // different venues — fetch each venue's schedule once per tick rather
+    // than assuming everyone means DEFAULT_VENUE_ID.
+    const presetsByVenue = new Map();
+    for (const preset of dayPresets) {
+      const venueId = preset.venueId ?? DEFAULT_VENUE_ID;
+      if (!presetsByVenue.has(venueId)) presetsByVenue.set(venueId, []);
+      presetsByVenue.get(venueId).push(preset);
     }
 
-    if (!data.total_events) continue; // Schedule not published yet for this date.
-
-    for (const preset of dayPresets) {
-      const activity = (data.activities ?? []).find(a => a.activity_name === preset.activityName);
-      const event = activity?.events?.find(e => e.start_time === preset.startTime);
-      if (!event) continue;
-
+    for (const [venueId, venuePresets] of presetsByVenue) {
+      let data;
       try {
-        await bookingService.processAutoSubscriptionMatch({ userId: preset.userId, event, activity, dateStr }, bot);
+        data = await scheduleService.fetchSchedule(dateStr, dayOfWeekFor(dateStr), 'limited', venueId);
       } catch (err) {
-        // processAutoSubscriptionMatch is designed to never throw, but guard
-        // anyway so one bad preset can't take down the rest of this tick.
-        logger.error('watcher', 'Unexpected error processing auto-subscription preset', { id: preset.id, error: err.message });
+        logger.error('watcher', 'Auto-subscription schedule fetch failed', { dateStr, venueId, error: err.message });
+        continue;
+      }
+
+      if (!data.total_events) continue; // Schedule not published yet for this date.
+
+      for (const preset of venuePresets) {
+        const activity = (data.activities ?? []).find(a => a.activity_name === preset.activityName);
+        const event = activity?.events?.find(e => e.start_time === preset.startTime);
+        if (!event) continue;
+
+        try {
+          await bookingService.processAutoSubscriptionMatch({ userId: preset.userId, event, activity, dateStr }, bot);
+        } catch (err) {
+          // processAutoSubscriptionMatch is designed to never throw, but guard
+          // anyway so one bad preset can't take down the rest of this tick.
+          logger.error('watcher', 'Unexpected error processing auto-subscription preset', { id: preset.id, error: err.message });
+        }
       }
     }
   }

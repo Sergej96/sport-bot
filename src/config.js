@@ -52,7 +52,7 @@ export const VENUE_CACHE_TTL_MS = Number(process.env.VENUE_CACHE_TTL_MS) || 12 *
 // the venue's site (спортдлявсех.бел) instead of reserving a slot directly.
 export const BOOKING_URL = 'https://xn--b1adewnfifgg2b6h.xn--90ais';
 
-export const POLL_INTERVAL_MS = 60_000;       // 1 minute
+export const POLL_INTERVAL_MS = 12_000;       // 12 seconds
 export const MAX_NOTIFICATIONS = 2;           // per Saturday date
 export const MAX_CONSECUTIVE_FAILURES = 5;
 export const API_TIMEOUT_MS = 10_000;

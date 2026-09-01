@@ -87,7 +87,8 @@ async function renderMySubscriptions(ctx, edit = false) {
       lines.push(`<b>${dayLabel(dayName)}:</b>`);
       for (const preset of dayPresets) {
         const timeLabel = preset.startTime.slice(0, 5);
-        lines.push(`🔁 ${timeLabel} — ${preset.activityName}`);
+        const venueLabel = preset.venueName ?? (preset.venueId ? preset.venueId : '⚠️ площадка не указана');
+        lines.push(`🔁 ${timeLabel} — ${preset.activityName}\n     📍 ${venueLabel}`);
         const text = fitLabel({ before: `❌ ${dayLabel(dayName)} ${timeLabel} · `, name: preset.activityName });
         keyboardRows.push([Markup.button.callback(text, `subdel:${preset.id}`)]);
       }
@@ -187,6 +188,13 @@ export function registerSubscriptionPresetHandlers(bot) {
         return;
       }
 
+      const activeVenue = await storage.getUserVenue(chatId);
+      if (!activeVenue) {
+        await ctx.answerCbQuery();
+        await ctx.editMessageText('Сначала выбери зал через /venue — авто-подписке нужно знать, за каким залом следить.');
+        return;
+      }
+
       const startTime = `${timeLabel}:00`;
       const conflict = await storage.findConflictingAutoSubscription(chatId, dayName, startTime);
 
@@ -204,8 +212,15 @@ export function registerSubscriptionPresetHandlers(bot) {
         return;
       }
 
-      await storage.addAutoSubscription({ userId: chatId, dayOfWeek: dayName, activityName, startTime });
-      logger.info('bot', `Auto-subscription created for ${chatId}: ${dayName} ${startTime} ${activityName}`);
+      await storage.addAutoSubscription({
+        userId: chatId,
+        dayOfWeek: dayName,
+        activityName,
+        startTime,
+        venueId: activeVenue.id,
+        venueName: activeVenue.name,
+      });
+      logger.info('bot', `Auto-subscription created for ${chatId}: ${dayName} ${startTime} ${activityName} @ ${activeVenue.name ?? activeVenue.id}`);
 
       await ctx.answerCbQuery('Подписка создана ✅');
       await ctx.editMessageText(

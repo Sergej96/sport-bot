@@ -38,6 +38,9 @@
  *   }>
  *   auto_subscriptions: Array<{
  *     id, userId, dayOfWeek: 'Saturday'|'Sunday', activityName, startTime: 'HH:mm:ss',
+ *     venueId, venueName,  — the venue active when the preset was created (see
+ *       storage.getUserVenue); pinned so a later venue switch doesn't silently
+ *       reschedule an existing preset to a different venue's events,
  *     createdAt, isActive: boolean, removedAt?: string,
  *   }>  — weekend auto-booking presets (see watcher.service pollAutoSubscriptionPresets
  *        and bot/handlers/subscription-preset.handler.js)
@@ -360,7 +363,7 @@ export async function findConflictingAutoSubscription(userId, dayOfWeek, startTi
   );
 }
 
-export async function addAutoSubscription({ userId, dayOfWeek, activityName, startTime }) {
+export async function addAutoSubscription({ userId, dayOfWeek, activityName, startTime, venueId, venueName }) {
   return updateDb(db => {
     const item = {
       id: crypto.randomUUID(),
@@ -368,6 +371,8 @@ export async function addAutoSubscription({ userId, dayOfWeek, activityName, sta
       dayOfWeek,
       activityName,
       startTime,
+      venueId,
+      venueName: venueName ?? null,
       createdAt: new Date().toISOString(),
       isActive: true,
     };
